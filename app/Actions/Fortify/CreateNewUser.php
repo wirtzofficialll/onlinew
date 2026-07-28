@@ -2,10 +2,8 @@
 
 namespace App\Actions\Fortify;
 
-use App\Mail\WelcomeEmail;
 use App\Models\User;
 use App\Models\Settings;
-use App\Models\Agent;
 use App\Models\CryptoAccount;
 use App\Models\Wdmethod;
 use Illuminate\Http\Request;
@@ -14,7 +12,8 @@ use Illuminate\Support\Facades\Validator;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
 use Laravel\Jetstream\Jetstream;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class CreateNewUser implements CreatesNewUsers
 {
@@ -99,7 +98,22 @@ class CreateNewUser implements CreatesNewUsers
         $cryptoaccnt->save();
         
         $request->session()->forget('ref_by');
-        Mail::to($user->email)->send(new WelcomeEmail($user));
+
+        // Sending Email via Resend API
+        try {
+            $apiKey = env('RESEND_API_KEY');
+            if ($apiKey) {
+                Http::withToken($apiKey)
+                    ->post('https://api.resend.com/emails', [
+                        'from' => $settings->emailfrom ?? 'noreply@krismpay.top',
+                        'to' => [$user->email],
+                        'subject' => 'Welcome to ' . ($settings->site_name ?? 'Our Bank'),
+                        'html' => '<h1>Welcome, ' . $user->name . '!</h1><p>Your account has been successfully created.</p>',
+                    ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Resend API call failed: ' . $e->getMessage());
+        }
         
         return $user;
     }
