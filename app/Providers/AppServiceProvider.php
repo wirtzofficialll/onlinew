@@ -45,29 +45,29 @@ class AppServiceProvider extends ServiceProvider
         }
 
         // 2. Register the Resend API Transport
-        Mail::extend('resend-api', function ($app) {
-            return new class extends \Illuminate\Mail\Transport\Transport {
-                public function send(\Swift_Mime_SimpleMessage $message, &$failedRecipients = null)
-                {
-                    $this->beforeSendPerformed($message);
+         if ($this->app->environment('production')) {
+        \Illuminate\Support\Facades\Mail::resolved(function ($mailManager) {
+            $mailManager->extend('smtp', function ($app) {
+                return new class extends \Illuminate\Mail\Transport\Transport {
+                    public function send(\Swift_Mime_SimpleMessage $message, &$failedRecipients = null)
+                    {
+                        $response = \Illuminate\Support\Facades\Http::withToken(env('RESEND_API_KEY'))
+                            ->post('https://api.resend.com/emails', [
+                                'from'    => env('MAIL_FROM_ADDRESS'),
+                                'to'      => array_keys($message->getTo()),
+                                'subject' => $message->getSubject(),
+                                'html'    => $message->getBody(),
+                            ]);
 
-                    $response = Http::withToken(env('RESEND_API_KEY'))
-                        ->post('https://api.resend.com/emails', [
-                            'from' => env('MAIL_FROM_ADDRESS', 'noreply@your-domain.com'),
-                            'to' => array_keys($message->getTo()),
-                            'subject' => $message->getSubject(),
-                            'html' => $message->getBody(),
-                        ]);
-
-                    if ($response->failed()) {
-                        throw new \Exception('Resend API Error: ' . $response->body());
+                        if ($response->failed()) {
+                            throw new \Exception('Resend API Error: ' . $response->body());
+                        }
+                        return $this->numberOfRecipients($message);
                     }
-
-                    $this->sendPerformed($message);
-                    return $this->numberOfRecipients($message);
-                }
-            };
+                };
+            });
         });
+    }
 
         FacadesStorage::extend('sftp', function ($app, $config) {
             return new Filesystem(new SftpAdapter($config));
